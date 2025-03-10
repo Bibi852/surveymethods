@@ -1,0 +1,92 @@
+## import packages
+```{r}
+library(pacman)
+p_load(tidyverse, tidycensus, ggplot2, gtsummary,
+       kableExtra, flextable, officer)
+
+```
+
+## import pums
+
+```{r}
+# view variable dictionary
+pums_vars_2018 <- pums_variables %>% 
+    filter(year == 2018, survey == 'acs1',
+           level == 'person')
+
+View(pums_vars_2018)
+```
+
+## get pums
+```{r}
+CA_pums <- get_pums(
+    variables = c('PUMA', 'SEX', 'AGEP', 'SCHL', 'HINCP', 'RAC1P',
+                  # language other than english spoken at home 1 yes 2 no
+                  'LANX',
+                  #class of worker
+                  'COW',
+                  # born 1 native or 2 foreign born
+                  'NATIVITY'),
+    state = 'CA',
+    survey = 'acs1',
+    year = 2018,
+    recode = T
+)
+
+```
+
+## exporting csv
+```{r}
+write.csv(CA_pums, file = "CA_pums.csv", row.names = F)
+```
+
+## summary table
+```{r}
+
+numeric_table_summary <- CA_pums %>%
+    select(AGEP, HINCP) %>%
+    summarise(
+        across(everything(),
+               list(
+                   mean = ~ mean(., na.rm = T),
+                   sd = ~sd(., na.rm = T),
+                   min = ~min(., na.rm = T),
+                   max = ~max(., na.rm = T)
+                   
+               ))
+    )
+
+discrete_table_summary <- CA_pums %>%
+    select(-ST, -ST_label) %>%
+    summarise(
+        across(where(is.factor), list(
+            unique = ~n_distinct(.),
+            mode = ~names(sort(table(.), decreasing = T))[1]
+        )))
+
+numeric_table_long <- numeric_table_summary %>%
+    pivot_longer(cols = everything(),
+                 names_to = c('variable', 'statistic'),
+                 names_sep = '_')
+
+discrete_table_long <- discrete_table_summary %>%
+    pivot_longer(cols = everything(),
+                 names_to = c('variable', 'statistic'),
+                 names_sep = '_')
+```
+
+```{r}
+
+summary_table <- CA_pums %>%
+    select(AGEP, HINCP, COW_label, LANX_label, SEX_label,
+           NATIVITY_label, RAC1P_label, SCHL_label) %>%
+    tbl_summary(
+        statistic = list(all_continuous() ~ "{mean} ({sd})",
+                                 all_categorical() ~ "{p}%"),
+                digits = all_continuous() ~ 1,
+                type = list(AGEP ~ "continuous")
+    )
+
+
+summary_table
+```
