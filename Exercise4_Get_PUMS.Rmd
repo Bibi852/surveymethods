@@ -1,0 +1,68 @@
+---
+title: "Exercise 4 Get PUMS Part"
+output: html_document
+date: "2025-03-11"
+---
+
+## Import packages
+```{r}
+library(pacman)
+p_load(tidyverse, tidycensus)
+
+```
+
+## Import PUMS Data
+
+```{r}
+# view variable dictionary
+pums_vars_2018 <- pums_variables %>% 
+    filter(year == 2018, survey == 'acs1',
+           level == 'person')
+
+View(pums_vars_2018)
+```
+
+## get pums
+```{r}
+# not recoded version
+CA_pums <- get_pums(
+    variables = c('PUMA', 'SEX', 'AGEP', 'SCHL', 'HINCP', 'RAC1P',
+                  # language other than english spoken at home 
+                  # 1 = yes 2 = no
+                  'LANX',
+                  #class of worker - includes private, federal, self-employed, unpaid and unemployed classes
+                  'COW',
+                  # born 1 = native or 2 = foreign born
+                  'NATIVITY'),
+    # state of California
+    state = 'CA',
+    survey = 'acs1',
+    # one year survey from year 2018
+    year = 2018
+)
+
+```
+
+```{r}
+# recoded version of PUMS dataset
+CA_pums_recoded <- get_pums(
+    variables = c('PUMA', 'SEX', 'AGEP', 'SCHL', 'HINCP', 'RAC1P',
+                  # language other than english spoken at home 1 yes 2 no
+                  'LANX',
+                  #class of worker
+                  'COW',
+                  # born 1 native or 2 foreign born
+                  'NATIVITY'),
+    state = 'CA',
+    survey = 'acs1',
+    year = 2018,
+    recode = T
+)
+
+```
+
+## exporting csv
+```{r}
+write.csv(CA_pums, file = "CA_pums.csv", row.names = F)
+write.csv(CA_pums_recoded, file = "CA_pums_recoded.csv", row.names = F)
+```

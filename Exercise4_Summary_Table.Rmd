@@ -1,0 +1,81 @@
+---
+title: "Exercise 4 Summary Table Part"
+output: html_document
+date: "2025-03-11"
+---
+## Importing libraries
+```{r}
+library(pacman)
+p_load(tidyverse, tidycensus, gtsummary,
+       flextable, officer, survey, cardx)
+```
+
+## Modifying PUMS Data for Summary Table
+```{r}
+# Using recoded dataset
+CA_pums_select <- read_csv("CA_pums_recoded.csv") %>%
+  mutate(SCHL_label = case_when(
+    # summarising education variable further
+    SCHL %in% 1:15  ~ "No High School",           # no schooling up to grade 12th grade and no diploma
+    SCHL %in% 16:17 ~ "High School",     # hs graduate
+    SCHL %in% 18:19 ~ "Some College",  # attended college but no degree
+    SCHL == 20 ~ "Associate Degree",         # associate degree
+    SCHL %in% 21:24 ~ "Bachelor’s+", # bachelor's and above
+    TRUE ~ "N/A (less than 3 years old)" # based on 2018 data dictionary
+  ),
+  # class of worker modification
+  COW_label = case_when(
+    COW %in% 1:2  ~ "Private Sector", # for or non-for profit private organisations  
+    COW %in% 3:5  ~ "Government",  # local, state and federal employees            
+    COW %in% 6:8  ~ "Self-Employed/Unpaid", # self employment or unpaid family worker  
+    COW == 9 ~ "Unemployed",
+    TRUE ~ "N/A (less than 16 years old/NILF who last worked more than 5 years ago or never worked)" # also based on data dictionary
+  )
+  ) %>%
+  # only selecting needed variables without redundancies
+  select(AGEP, HINCP, COW_label, LANX_label, SEX_label,
+           NATIVITY_label, RAC1P_label, SCHL_label, PWGTP)
+# creating weighted survey design item for weighted summary statistics
+design <- svydesign(id = ~1, weights = ~PWGTP, data = CA_pums_select)
+```
+
+```{r}
+
+sumtable <- design %>%
+  tbl_svysummary(
+    include = c(AGEP, HINCP, COW_label, LANX_label, SEX_label,
+           NATIVITY_label, RAC1P_label, SCHL_label),
+    statistic = list(
+      # include mean and sd statistics for continuous variables
+      all_continuous() ~ "{mean} ({sd})",
+      # proportions and percentage for categorical variables
+      all_categorical() ~ "{n}/{N} ({p}%)"
+    ),
+    digits = list(
+      all_continuous() ~ 1,
+      all_categorical() ~ 1
+    ),
+    # formatting labels for each variable
+    label = list(
+      AGEP ~ "Age",
+      HINCP ~ "Household Income",
+      COW_label ~ "Class of worker",
+      LANX_label ~ "Non-English language spoken at home",
+      SEX_label ~ "Sex",
+      NATIVITY_label ~ "Nativity",
+      RAC1P_label ~ "Race Group",
+      SCHL_label ~ "Schooling"
+    )
+  ) %>%
+  modify_caption("Weighted Summary Statistics for 2018 PUMS Data") %>%
+  bold_labels()
+
+
+```
+
+```{r}
+# saving to docx file
+sumtable_flex <- as_flex_table(sumtable)
+save_as_docx(sumtable_flex, path = "Exercise 4 - Census Exercise 1.docx")
+
+```

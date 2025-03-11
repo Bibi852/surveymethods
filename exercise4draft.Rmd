@@ -2,7 +2,7 @@
 ```{r}
 library(pacman)
 p_load(tidyverse, tidycensus, ggplot2, gtsummary,
-       kableExtra, flextable, officer)
+       kableExtra, flextable, officer, survey, cardx)
 
 ```
 
@@ -29,6 +29,23 @@ CA_pums <- get_pums(
                   'NATIVITY'),
     state = 'CA',
     survey = 'acs1',
+    year = 2018
+)
+
+```
+
+```{r}
+
+CA_pums_recoded <- get_pums(
+    variables = c('PUMA', 'SEX', 'AGEP', 'SCHL', 'HINCP', 'RAC1P',
+                  # language other than english spoken at home 1 yes 2 no
+                  'LANX',
+                  #class of worker
+                  'COW',
+                  # born 1 native or 2 foreign born
+                  'NATIVITY'),
+    state = 'CA',
+    survey = 'acs1',
     year = 2018,
     recode = T
 )
@@ -38,9 +55,44 @@ CA_pums <- get_pums(
 ## exporting csv
 ```{r}
 write.csv(CA_pums, file = "CA_pums.csv", row.names = F)
+write.csv(CA_pums_recoded, file = "CA_pums_recoded.csv", row.names = F)
+```
+## summary table
+
+```{r}
+CA_pums_select <- CA_pums_recoded %>%
+  select(AGEP, HINCP, COW_label, LANX_label, SEX_label,
+           NATIVITY_label, RAC1P_label, SCHL_label, PWGTP)
+design <- svydesign(id = ~1, weights = ~PWGTP, data = CA_pums_select)
+sumtable <- design %>%
+  tbl_svysummary(
+    include = c(AGEP, HINCP, COW_label, LANX_label, SEX_label,
+           NATIVITY_label, RAC1P_label, SCHL_label),
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_categorical() ~ "{n}/{N} ({p}%)"
+    ),
+    digits = list(
+      all_continuous() ~ 1,
+      all_categorical() ~ 1
+    ),
+    label = list(
+      AGEP ~ "Age",
+      HINCP ~ "Household Income",
+      COW_label ~ "Class of worker",
+      LANX_label ~ "Non-English language spoken at home",
+      SEX_label ~ "Sex",
+      NATIVITY_label ~ "Nativity",
+      RAC1P_label ~ "Race Group",
+      SCHL_label ~ "Schooling"
+    )
+  ) %>%
+  modify_caption("Weighted Summary Statistics for 2018 PUMS Data") %>%
+  bold_labels()
+
 ```
 
-## summary table
+
 ```{r}
 
 numeric_table_summary <- CA_pums %>%
@@ -89,4 +141,18 @@ summary_table <- CA_pums %>%
 
 
 summary_table
+```
+
+
+```{r}
+
+summary(CA_pums)
+
+```
+
+
+```{r}
+
+
+
 ```
