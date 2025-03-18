@@ -1,0 +1,199 @@
+---
+title: "Exercise 5 R Code"
+output: html_document
+date: "2025-03-17"
+---
+
+## Conduct a `get_pums()` request with at least 10 variables
+```{r}
+library(pacman)
+p_load(tidyverse, tidycensus, ggplot2, survey, srvyr, gtsummary, tmap, tigris, flextable)
+
+```
+
+### Explore PUMS 2018 Variables
+
+```{r}
+# view variable dictionary
+pums_vars_2018 <- pums_variables %>% 
+    filter(year == 2018, survey == 'acs1',
+           level == 'person')
+
+View(pums_vars_2018)
+```
+
+
+```{r}
+ten_var <- c('PUMA', 'AGEP', 'SCHL', 'WKL', 'HISP', 'NATIVITY', 'ESR', 'NOC', 'HICOV', 'POVPIP')
+
+pums_df <- get_pums(variables = ten_var, state = 'AZ', year = 2018, 
+                    survey = 'acs1',
+                    variables_filter = list(
+                      SEX = 2, MAR = 1
+                    ), rep_weights = "person")
+
+```
+
+```{r}
+
+write.csv(pums_df, 'og_pums_df.csv')
+
+```
+
+### Preparing PUMS dataset
+
+```{r}
+
+transformed_pums <- pums_df %>%
+  to_survey() %>%
+  # filter out missing values for children and poverty ratio
+  # filter for only adults and civilians 
+  filter(if_all(c(NOC, POVPIP), ~ . > -1), AGEP > 18, ESR %in% c(1,2,3,6)) %>%
+  # outcome is binary - whether an individual has at least one child
+  mutate(child = ifelse(NOC > 0, 1, 0),
+         # whether one has at least an AA
+         col = ifelse(SCHL >= 20, 'yes', 'no'),
+         # whether one is of Hispanic origin
+         hisp = ifelse(HISP == '01', 'no', 'yes'),
+         # whether one has health insurance
+         insur = ifelse(HICOV == 1, 'yes', 'no'),
+         # whether one is currently employed
+         employ = case_when(ESR %in% c(1,2) ~ "yes",
+                            TRUE ~ "no"),
+         # whether one was born in the United States
+         native = ifelse(NATIVITY == 1, 'yes', 'no'),
+         # whether one has worked in the past 12 months
+         work = ifelse(WKL == 1, 'yes', 'no'),
+         # whether one is at or below the federal poverty threshold
+         POVPIP = ifelse(POVPIP <= 100, 'yes', 'no')) %>%
+  rename(age = AGEP
+         , pov = POVPIP)
+  
+
+```
+
+```{r}
+# getting Arizona county PUMA codes from ProximityOne vintage geography database
+maricopa <- c("00100", "00101", "00102", "00103", "00104", "00105", "00106", 
+                "00107", "00108", "00109", "00110", "00111", "00112", "00124", "00126", "00127", "00130", "00131", "00132", "00133", "00134")
+phoenix <- c("00113", "00114", "00115", "00116", "00117", "00118", "00119", 
+                "00120", "00121", "00122", "00123", "00125", "00128", "00129")
+
+pima <- c("00201", "00203", "00204", "00205")
+tuscon <- c("00202", "00206", "00207", "00208", "00209")
+# creating version of clean dataset with recoded PUMA variable
+trans_pums <- pums_df %>%
+  to_survey() %>%
+  filter(if_all(c(NOC, POVPIP), ~ . > -1), AGEP > 18, ESR %in% c(1,2,3,6)) %>%
+  mutate(child = ifelse(NOC > 0, 1, 0),
+         col = ifelse(SCHL >= 20, 'yes', 'no'),
+         hisp = ifelse(HISP == '01', 'no', 'yes'),
+         insur = ifelse(HICOV == 1, 'yes', 'no'),
+         employ = case_when(ESR %in% c(1,2) ~ "yes",
+                            TRUE ~ "no"),
+         native = ifelse(NATIVITY == 1, 'yes', 'no'),
+         work = ifelse(WKL == 1, 'yes', 'no'),
+         POVPIP = ifelse(POVPIP <= 100, 'yes', 'no'),
+         county = case_when(
+           PUMA %in% maricopa ~ "Maricopa",
+           PUMA %in% phoenix ~ "Phoenix",
+           PUMA %in% pima ~ "Pima",
+           PUMA %in% tuscon ~ "Tuscon",
+           TRUE ~ "Other"
+         )) %>%
+  rename(age = AGEP, pov = POVPIP)
+
+```
+
+
+### Fitting Logit Model
+```{r}
+child_m <- svyglm(formula = child ~ col+hisp+insur+employ+native+age+work+pov+PUMA,
+                  design = transformed_pums, family = quasibinomial())
+
+```
+
+```{r}
+# model with recoded PUMA variable
+child_m2 <- svyglm(formula = child ~ col+hisp+insur+employ+native+age+work+pov+county,
+                  design = trans_pums, family = quasibinomial())
+
+```
+### Generating Regression Table
+
+```{r}
+# using gtsummary to create summary regression table with odds ratio
+regression_table <- tbl_regression(child_m, exponentiate = T,
+               label = list(
+                 col = 'College',
+                 hisp = 'Hispanic Origin',
+                 insur = 'Health Insurance',
+                 employ = 'Employed',
+                 native = 'U.S. Native',
+                 age = 'Age',
+                 work = 'Worked in past 12 months',
+                 pov = 'At/Below Poverty Line'
+               ),
+               pvalue_fun = label_style_pvalue(digits = 2),
+               estimate_fun = label_style_ratio(digits = 3)) %>%
+  # formatting of labels and p-values
+  add_global_p()%>% 
+  
+  bold_p(t=0.05) %>%
+  bold_labels() %>%
+  italicize_levels() %>%
+  modify_header(label = "Variable") %>%
+  modify_caption("Logistic Regression Results")
+# saving results
+regression_table %>% as_flex_table() %>%
+  save_as_docx(path="/Users/abigaillee/Desktop/JHU/surveymethods/regression_table1.docx")
+```
+
+```{r}
+# creating regression table for the recoded PUMA variable
+recode_regression <- tbl_regression(child_m2, exponentiate = T,
+               label = list(
+                 col = 'College',
+                 hisp = 'Hispanic Origin',
+                 insur = 'Health Insurance',
+                 employ = 'Employed',
+                 native = 'U.S. Native',
+                 age = 'Age',
+                 work = 'Worked in past 12 months',
+                 pov = 'At/Below Poverty Line',
+                 county = 'Arizona County'
+               ),
+               pvalue_fun = label_style_pvalue(digits = 2),
+               estimate_fun = label_style_ratio(digits = 3)) %>%
+  
+  bold_p(t=0.05) %>%
+  bold_labels() %>%
+  italicize_levels() %>%
+  modify_header(label = "**Variable**") %>%
+  modify_caption("Recoded PUMA Regression Results")
+
+
+recode_regression %>% as_flex_table() %>%
+  save_as_docx(path = "recode_regression.docx")
+```
+
+### Plot percentage of married women with at least one child in those below or at the poverty line
+
+```{r}
+
+plot_table <- pums_df %>%
+  filter(POVPIP != -1, POVPIP <=100, NOC != -1) %>%
+  group_by(PUMA) %>%
+  summarize(one_child = 100 * (sum(PWGTP[NOC>0])/sum(PWGTP)))
+
+library(tmap)
+
+AZ_pumas <- pumas(state = 'AZ', cb = T, year = 2018)
+joined_pumas <- AZ_pumas %>% left_join(plot_table, by = c('PUMACE10'='PUMA'))
+tm_shape(joined_pumas) +
+  tm_polygons(col = 'one_child', palette = 'Blues', 
+              title = '% of married women\n at/below poverty line\nwith 1+ children') +
+  tm_layout(legend.outside = T, legend.outside.position = 'right')
+
+
+```
